@@ -1,5 +1,5 @@
 // Service Worker – Offline-Cache für FitRemind v4
-const CACHE = "fitremind-cache-v4";
+const CACHE = "fitremind-cache-v4-402";
 const ASSETS = [
   "./",
   "./index.html",

@@ -1,4 +1,11 @@
-// FitRemind v4 – komplette Logik mit Theme/Font, Wiederholungen, CSV/ICS,
+// Fehler sichtbar machen statt still zu brechen
+window.addEventListener('error', (e)=>{
+  const msg = (e.message || 'Fehler') + (e.filename ? '\n' + e.filename + ':' + e.lineno : '');
+  document.body.insertAdjacentHTML(
+    'afterbegin',
+    '<div style="position:fixed;left:8px;bottom:8px;background:#fee;border:1px solid #900;color:#900;padding:8px;z-index:9999;max-width:90vw;white-space:pre-wrap">'+msg+'</div>'
+  );
+});// FitRemind v4 – komplette Logik mit Theme/Font, Wiederholungen, CSV/ICS,
 // YouTube, Kurz-Notiz + NEU: Ausführliche Beschreibung (ein-/ausklappbar)
 
 const $ = (sel)=>document.querySelector(sel);

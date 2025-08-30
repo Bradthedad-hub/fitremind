@@ -1,134 +1,404 @@
-// FitRemind v4 – unterstützt Wochentage oder Intervall (alle N Tage)
+// FitRemind v4 – komplette Logik mit Theme/Font, Wiederholungen, CSV/ICS,
+// YouTube, Kurz-Notiz + NEU: Ausführliche Beschreibung (ein-/ausklappbar)
+
 const $ = (sel)=>document.querySelector(sel);
 const listEl = $("#list");
 let deferredPrompt = null;
 let editIdx = null;
 
-// Storage-Keys
+// ---------- Storage ----------
 const KEY = "fitremind:v4";
+const UIKEY = "fitremind:ui:v4";
+
 function load(){ try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch(e){ return []; } }
 function save(d){ localStorage.setItem(KEY, JSON.stringify(d)); }
+function loadUI(){ try { return JSON.parse(localStorage.getItem(UIKEY)) || {}; } catch(e){ return {}; } }
+function saveUI(u){ localStorage.setItem(UIKEY, JSON.stringify(u)); }
 
-// Formular dynamisch einsetzen
-document.getElementById("form-container").innerHTML = `
-  <div class="row">
-    <div>
-      <label for="name">Name der Übung</label>
-      <input id="name" placeholder="z.B. Planks, Dehnen">
-    </div>
-    <div>
-      <label for="time">Uhrzeit</label>
-      <input id="time" type="time" value="08:00">
-    </div>
-  </div>
-  <div class="row-3" style="margin-top:10px">
-    <div><label for="duration">Dauer (Min.)</label><input id="duration" type="number" value="10"></div>
-    <div><label for="sets">Sätze</label><input id="sets" type="number" value="3"></div>
-    <div><label for="reps">Wiederholungen</label><input id="reps" type="number" value="10"></div>
-  </div>
-  <div class="row" style="margin-top:10px">
-    <div>
-      <label for="recurrence">Wiederholung</label>
-      <select id="recurrence">
-        <option value="weekly">An bestimmten Wochentagen</option>
-        <option value="interval">Alle N Tage</option>
-      </select>
-    </div>
-    <div id="intervalBox" class="hidden">
-      <label for="intervalDays">Intervall (Tage)</label>
-      <input id="intervalDays" type="number" min="1" value="2">
-    </div>
-  </div>
-  <div id="weekdayBox" style="margin-top:10px">
-    <label>Wochentage</label>
-    <div class="actions">
-      <label><input type="checkbox" class="weekday" value="MO"> Mo</label>
-      <label><input type="checkbox" class="weekday" value="TU"> Di</label>
-      <label><input type="checkbox" class="weekday" value="WE"> Mi</label>
-      <label><input type="checkbox" class="weekday" value="TH"> Do</label>
-      <label><input type="checkbox" class="weekday" value="FR"> Fr</label>
-      <label><input type="checkbox" class="weekday" value="SA"> Sa</label>
-      <label><input type="checkbox" class="weekday" value="SU"> So</label>
-    </div>
-  </div>
-  <div class="footer">
-    <button id="add">➕ Speichern</button>
-    <button id="cancelEdit" class="secondary hidden">✖️ Abbrechen</button>
-  </div>
-`;
+// ---------- UI: Theme & Schrift ----------
+function applyUI(){
+  const ui = loadUI();
+  const theme = ui.theme || "dark";
+  document.documentElement.setAttribute("data-theme", theme);
+  const font = ui.fontscale || "1";
+  document.documentElement.style.setProperty("--fontscale", font);
+  document.documentElement.setAttribute("data-fontscale", font);
+  const thSel = $("#themeSelect"), ftSel = $("#fontSelect");
+  if (thSel) thSel.value = theme;
+  if (ftSel) ftSel.value = font;
+  if (ui.displayName){
+    $("#app-title").innerHTML = `💪 ${ui.displayName} <span class="chip">PWA</span>`;
+    document.title = ui.displayName + " – Übungen & Erinnerungen";
+  }
+  if (ui.iconDataUrl){
+    const ico = $("#app-favicon");
+    if (ico) ico.href = ui.iconDataUrl;
+    const prev = $("#iconPreview");
+    if (prev) prev.src = ui.iconDataUrl;
+  }
+}
+applyUI();
 
-// Recurrence-Umschalten
+$("#themeSelect")?.addEventListener("change", (e)=>{ const ui=loadUI(); ui.theme=e.target.value; saveUI(ui); applyUI(); });
+$("#fontSelect")?.addEventListener("change", (e)=>{ const ui=loadUI(); ui.fontscale=e.target.value; saveUI(ui); applyUI(); });
+
+// ---------- Formular-Grundbefüllung ----------
+const tzSelect = $("#timezone");
+const tzs = (Intl.supportedValuesOf ? Intl.supportedValuesOf("timeZone") : ["Europe/Berlin"]);
+tzs.forEach(tz=>{ const o=document.createElement("option"); o.value=tz;o.textContent=tz; tzSelect?.appendChild(o); });
+try { if (tzSelect) tzSelect.value = Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Berlin"; } catch(e){ if (tzSelect) tzSelect.value = "Europe/Berlin"; }
+
+const startdate = $("#startdate");
+if (startdate) startdate.valueAsDate = new Date();
+
+// Recurrence UI toggle
 const recurrenceSel = $("#recurrence");
 const weekdayBox = $("#weekdayBox");
 const intervalBox = $("#intervalBox");
 function toggleRecurrenceUI(){
-  if(recurrenceSel.value === "weekly"){ weekdayBox.classList.remove("hidden"); intervalBox.classList.add("hidden"); }
-  else { weekdayBox.classList.add("hidden"); intervalBox.classList.remove("hidden"); }
+  const mode = recurrenceSel?.value || "weekly";
+  if(mode === "weekly"){ weekdayBox?.classList.remove("hidden"); intervalBox?.classList.add("hidden"); }
+  else { weekdayBox?.classList.add("hidden"); intervalBox?.classList.remove("hidden"); }
 }
-recurrenceSel.addEventListener("change", toggleRecurrenceUI);
+recurrenceSel?.addEventListener("change", toggleRecurrenceUI);
 toggleRecurrenceUI();
 
-// Helfer
+// Hilfsfunktionen
 function getCheckedDays(){ return [...document.querySelectorAll(".weekday:checked")].map(cb=>cb.value); }
-function setCheckedDays(days){ document.querySelectorAll(".weekday").forEach(cb=>cb.checked=days.includes(cb.value)); }
+function setCheckedDays(days){ document.querySelectorAll(".weekday").forEach(cb=>{ cb.checked = !!(days?.includes(cb.value)); }); }
 
 function clearForm(){
   $("#name").value=""; $("#time").value="08:00"; $("#duration").value="10";
-  $("#sets").value="3"; $("#reps").value="10"; $("#intervalDays").value="2";
-  setCheckedDays([]); editIdx=null;
-  $("#add").textContent="➕ Speichern"; $("#cancelEdit").classList.add("hidden");
+  $("#sets").value="3"; $("#reps").value="10";
+  $("#pain").value="0"; const pv = document.getElementById("painVal"); if (pv) pv.textContent="0";
+  $("#yt").value=""; $("#notes").value="";
+  $("#longNotes")?.value="";
+  setCheckedDays([]);
+  if (startdate) startdate.valueAsDate = new Date();
+  if (recurrenceSel){ recurrenceSel.value = "weekly"; }
+  $("#intervalDays").value="2"; toggleRecurrenceUI();
+  editIdx = null;
+  $("#add").textContent = "➕ Übung speichern";
+  $("#cancelEdit")?.classList.add("hidden");
 }
 
+function escHtml(s){ return String(s).replace(/[&<>"]/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[m])); }
+function nl2br(s){ return escHtml(s).replace(/\n/g,"<br>"); }
+
+// ---------- Render-Liste ----------
 function render(){
-  const data=load();
-  listEl.innerHTML="";
-  if(!data.length){ listEl.innerHTML="<p class='muted'>Noch keine Übungen.</p>"; return; }
-  data.forEach((ex,idx)=>{
-    const div=document.createElement("div");
-    div.className="item";
-    div.innerHTML=`
-      <div style="flex:1">
-        <h3>${ex.name}</h3>
-        <div class="muted">${ex.recurrence==="interval"?"alle "+ex.intervalDays+" Tage":(ex.days||[]).join(", ")} · ${ex.time}</div>
+  const data = load();
+  listEl.innerHTML = "";
+  if(!data.length){
+    listEl.innerHTML = "<p class='muted'>Noch keine Übungen angelegt.</p>";
+    return;
+  }
+  data.forEach((it, idx)=>{
+    const details = [];
+    if(it.sets) details.push(`${it.sets}×Sätze`);
+    if(it.reps) details.push(`${it.reps}×Whd`);
+    if(it.pain !== undefined) details.push(`Schmerz ${it.pain}/10`);
+    const recur = (it.recurrence==="interval") ? `alle ${it.intervalDays||1} Tage` : ((it.days||[]).join(",") || "—");
+
+    const item = document.createElement("div");
+    item.className = "item";
+    item.innerHTML = `
+      <div style="flex:1;min-width:260px">
+        <h3>${escHtml(it.name||"")}</h3>
+        <div class="muted">${recur} · ${escHtml(it.time||"")} · ${escHtml(it.tz||"")}${details.length? " · " + details.join(" · ") : ""}</div>
+        ${it.notes ? `<div class="muted">Notiz: ${escHtml(it.notes)}</div>` : ""}
+        ${it.yt ? `<div><a href="${escHtml(it.yt)}" target="_blank" rel="noopener">▶️ Video ansehen</a></div>` : ""}
+        ${it.longNotes ? `
+          <div style="margin-top:8px">
+            <button class="secondary" data-act="toggleLong" data-idx="${idx}">📑 Beschreibung anzeigen</button>
+            <div class="muted" id="long-${idx}" style="display:none; margin-top:8px; line-height:1.4">${nl2br(it.longNotes)}</div>
+          </div>` : ""}
       </div>
       <div class="actions">
-        <button data-act="edit" data-idx="${idx}" class="success">✏️</button>
-        <button data-act="delete" data-idx="${idx}" class="danger">🗑️</button>
-      </div>`;
-    listEl.appendChild(div);
+        <button data-act="edit" data-idx="${idx}" class="success">✏️ Bearbeiten</button>
+        <button data-act="ics" data-idx="${idx}" class="secondary">📆 .ics</button>
+        <button data-act="toggle" data-idx="${idx}" class="${it.active? 'success':'secondary'}">${it.active?'Aktiv':'Inaktiv'}</button>
+        <button data-act="delete" data-idx="${idx}" class="danger">Löschen</button>
+      </div>
+    `;
+    listEl.appendChild(item);
   });
 }
+render();
 
-// Aktionen
-$("#add").addEventListener("click",()=>{
-  const rec=recurrenceSel.value;
-  const record={
-    name:$("#name").value,
-    time:$("#time").value,
-    duration:$("#duration").value,
-    sets:$("#sets").value,
-    reps:$("#reps").value,
-    recurrence:rec,
-    days: rec==="weekly"?getCheckedDays():[],
-    intervalDays: rec==="interval"?$("#intervalDays").value:undefined
-  };
-  const data=load();
-  if(editIdx===null) data.push(record); else data[editIdx]=record;
-  save(data); render(); clearForm();
+// ---------- ICS/CSV ----------
+function byDayToRRule(days){ return days && days.length ? "BYDAY=" + days.join(",") : ""; }
+function toICS(ex){
+  const [hh, mm] = (ex.time||"08:00").split(":").map(Number);
+  const dt = new Date(ex.start || new Date()); dt.setHours(hh||8, mm||0, 0, 0);
+  function fmtLocal(d){ const y=d.getFullYear(); const m=String(d.getMonth()+1).padStart(2,"0"); const da=String(d.getDate()).padStart(2,"0"); const h=String(d.getHours()).padStart(2,"0"); const mi=String(d.getMinutes()).padStart(2,"0"); return `${y}${m}${da}T${h}${mi}00`; }
+  const uid = (crypto?.randomUUID ? crypto.randomUUID() : String(Date.now())) + "@fitremind";
+  let rrule = "";
+  if(ex.recurrence === "interval"){
+    const iv = Math.max(1, Number(ex.intervalDays)||1);
+    rrule = `FREQ=DAILY;INTERVAL=${iv}`;
+  } else {
+    const byday = byDayToRRule(ex.days);
+    rrule = `FREQ=WEEKLY;${byday}`;
+  }
+  const extra = [];
+  if(ex.sets) extra.push(`${ex.sets} Sätze`);
+  if(ex.reps) extra.push(`${ex.reps} Wiederholungen`);
+  if(ex.pain!==undefined) extra.push(`Schmerz: ${ex.pain}/10`);
+  if(ex.longNotes) extra.push(`Beschreibung: ${ex.longNotes.replace(/\r?\n/g," ")}`);
+  const desc = (ex.notes||"") + (ex.yt? "\\nVideo: " + ex.yt : "") + (extra.length? "\\n" + extra.join(" · ") : "");
+
+  return `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//FitRemind//PWA//DE
+BEGIN:VEVENT
+UID:${uid}
+DTSTAMP:${fmtLocal(new Date())}Z
+DTSTART;TZID=${ex.tz||"Europe/Berlin"}:${fmtLocal(dt)}
+DURATION:PT${Math.max(1, Number(ex.duration)||10)}M
+RRULE:${rrule}
+SUMMARY:${ex.name||"Übung"}
+DESCRIPTION:${desc.replace(/\n/g,"\\n")}
+END:VEVENT
+END:VCALENDAR`.replace(/\n/g,"\r\n");
+}
+
+function download(name, content, type){
+  const blob = new Blob([content], {type});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name; a.click(); URL.revokeObjectURL(a.href);
+}
+
+// ---------- Buttons oben/unten ----------
+$("#enableNotify")?.addEventListener("click", ensurePermission);
+$("#testNotify")?.addEventListener("click", async ()=>{
+  if(!(await ensurePermission())) return;
+  new Notification("FitRemind", { body: "Test – Benachrichtigungen funktionieren!", tag:"fitremind-test" });
 });
-$("#cancelEdit").addEventListener("click",clearForm);
 
-listEl.addEventListener("click",e=>{
-  const btn=e.target.closest("button"); if(!btn) return;
-  const idx=Number(btn.dataset.idx); const data=load();
-  if(btn.dataset.act==="delete"){ data.splice(idx,1); save(data); render(); }
-  if(btn.dataset.act==="edit"){ editIdx=idx; const ex=data[idx];
-    $("#name").value=ex.name; $("#time").value=ex.time; $("#duration").value=ex.duration;
-    $("#sets").value=ex.sets; $("#reps").value=ex.reps; $("#recurrence").value=ex.recurrence;
-    if(ex.recurrence==="weekly") setCheckedDays(ex.days); else $("#intervalDays").value=ex.intervalDays;
-    toggleRecurrenceUI();
-    $("#add").textContent="💾 Ändern"; $("#cancelEdit").classList.remove("hidden");
+$("#exportAll")?.addEventListener("click", ()=>{
+  const data=load(); if(!data.length){ alert("Keine Übungen vorhanden."); return; }
+  const parts=data.map(toICS).join("\n");
+  download("FitRemind_alle.ics", parts, "text/calendar");
+});
+
+$("#exportCSV")?.addEventListener("click", ()=>{
+  const data=load(); if(!data.length){ alert("Keine Übungen vorhanden."); return; }
+  const header = ["Name","Uhrzeit","Dauer_Min","Zeitzone","Startdatum_ISO","Wiederholung","Wochentage","Intervall_Tage","Sätze","Wiederholungen","Schmerz_0_10","YouTube","Kurz_Notiz","Ausführliche_Beschreibung","Aktiv"];
+  const lines = [header.join(",")];
+  const esc = (v)=>('"' + String(v).replace(/"/g,'""') + '"');
+  data.forEach(r=>{
+    lines.push([
+      r.name, r.time, r.duration||"", r.tz||"", r.start||"",
+      r.recurrence, (r.days||[]).join("|"), r.intervalDays||"",
+      r.sets||"", r.reps||"", (r.pain===0||r.pain? r.pain:""),
+      r.yt||"", r.notes||"", (r.longNotes||"").replace(/\r?\n/g," "),
+      r.active?"ja":"nein"
+    ].map(esc).join(","));
+  });
+  download("FitRemind_Uebungen.csv", lines.join("\r\n"), "text/csv");
+});
+
+$("#clear")?.addEventListener("click", ()=>{
+  if(confirm("Wirklich alle Übungen löschen?")){
+    localStorage.removeItem(KEY);
+    render(); clearForm();
   }
 });
 
-render();
+// ---------- Add/Save ----------
+$("#add")?.addEventListener("click", ()=>{
+  const name = $("#name").value.trim();
+  const time = $("#time").value;
+  const duration = $("#duration").value;
+  const tz = $("#timezone")?.value || "Europe/Berlin";
+  const start = startdate?.valueAsDate || new Date();
+  const notes = $("#notes")?.value.trim() || "";
+  const yt = $("#yt")?.value.trim() || "";
+  const sets = Number($("#sets").value)||null;
+  const reps = Number($("#reps").value)||null;
+  const pain = Number($("#pain").value);
+  const recurrence = recurrenceSel?.value || "weekly";
+  let days = [], intervalDays = null;
+  if(recurrence === "interval"){
+    intervalDays = Math.max(1, Number($("#intervalDays").value)||1);
+  } else {
+    days = getCheckedDays();
+  }
+  const longNotes = $("#longNotes")?.value || "";
+
+  if(!name || !time || (recurrence==="weekly" && !days.length)){
+    alert("Bitte Name, Uhrzeit und Wiederholung (Wochentage oder Intervall) angeben.");
+    return;
+  }
+
+  const data = load();
+  const record = {
+    name, time, duration, tz, start: start.toISOString(),
+    notes, yt, sets, reps, pain,
+    recurrence, days, intervalDays,
+    longNotes,
+    active: true
+  };
+  if(editIdx===null){ data.push(record); } else { record.active = data[editIdx].active; data[editIdx] = record; }
+  save(data); render(); scheduleTick(); clearForm();
+});
+
+$("#cancelEdit")?.addEventListener("click", clearForm);
+
+// ---------- List-Events ----------
+listEl.addEventListener("click",(e)=>{
+  const btn=e.target.closest("button"); if(!btn) return;
+  const idx=Number(btn.dataset.idx);
+  const data=load(); const ex=data[idx]; if(!ex) return;
+  const act=btn.dataset.act;
+
+  if(act==="delete"){
+    if(confirm("Diese Übung löschen?")){
+      data.splice(idx,1); save(data); render(); if(editIdx===idx) clearForm();
+    }
+  } else if(act==="toggle"){
+    ex.active=!ex.active; save(data); render();
+  } else if(act==="ics"){
+    const ics = toICS(ex); download(`${(ex.name||"uebung").replace(/\s+/g,"_")}.ics`, ics, "text/calendar");
+  } else if(act==="edit"){
+    editIdx = idx;
+    $("#name").value=ex.name||""; $("#time").value=ex.time||"08:00"; $("#duration").value=ex.duration||"10";
+    $("#sets").value=ex.sets||""; $("#reps").value=ex.reps||"";
+    $("#pain").value=(ex.pain!==undefined? ex.pain:0); const pv = document.getElementById("painVal"); if (pv) pv.textContent=$("#pain").value;
+    $("#timezone").value=ex.tz||$("#timezone").value;
+    const d = new Date(ex.start||new Date()); if (startdate) startdate.valueAsDate = d;
+    recurrenceSel.value = ex.recurrence || "weekly";
+    $("#intervalDays").value = ex.intervalDays || 2;
+    toggleRecurrenceUI();
+    setCheckedDays(ex.days||[]);
+    $("#notes").value=ex.notes||""; $("#yt").value=ex.yt||"";
+    $("#longNotes").value=ex.longNotes||"";
+    $("#add").textContent = "💾 Änderungen speichern";
+    $("#cancelEdit")?.classList.remove("hidden");
+    window.scrollTo({top:0, behavior:"smooth"});
+  } else if(act==="toggleLong"){
+    const box = document.getElementById(`long-${idx}`);
+    if(!box) return;
+    const visible = box.style.display !== "none";
+    box.style.display = visible ? "none" : "block";
+    btn.textContent = visible ? "📑 Beschreibung anzeigen" : "📕 Beschreibung verbergen";
+  }
+});
+
+// ---------- Notifications & Scheduler ----------
+async function ensurePermission(){
+  if(!("Notification" in window)) { alert("Dieser Browser unterstützt keine Benachrichtigungen."); return false; }
+  let perm = Notification.permission;
+  if(perm === "default"){ perm = await Notification.requestPermission(); }
+  if(perm !== "granted"){ alert("Benachrichtigungen sind nicht erlaubt."); return false; }
+  return true;
+}
+
+function weekdayCode(d){ return ["SU","MO","TU","WE","TH","FR","SA"][d.getDay()]; }
+function timeMatches(now, ex){
+  const [hh, mm] = (ex.time||"08:00").split(":").map(Number);
+  const local = new Date(now.toLocaleString("en-US", {timeZone: ex.tz||"Europe/Berlin"}));
+  return local.getHours()===(hh||8) && local.getMinutes()===(mm||0);
+}
+function isDueToday(now, ex){
+  const localNow = new Date(now.toLocaleString("en-US", {timeZone: ex.tz||"Europe/Berlin"}));
+  const start = new Date(new Date(ex.start||new Date()).toLocaleString("en-US", {timeZone: ex.tz||"Europe/Berlin"}));
+  const toMid = (d)=>{ const x=new Date(d); x.setHours(0,0,0,0); return x; };
+  const dNow = toMid(localNow), dStart = toMid(start);
+  if(dNow < dStart) return false;
+  if(ex.recurrence === "interval"){
+    const diffDays = Math.round((dNow - dStart) / 86400000);
+    const iv = Math.max(1, Number(ex.intervalDays)||1);
+    return (diffDays % iv) === 0;
+  } else {
+    return (ex.days||[]).includes(weekdayCode(localNow));
+  }
+}
+
+let lastMinuteKey = null;
+async function scheduleTick(){
+  const data = load().filter(x=>x.active);
+  if(!data.length) return;
+  if(!(await ensurePermission())) return;
+  const now = new Date();
+  const minuteKey = now.toISOString().slice(0,16);
+  if(minuteKey===lastMinuteKey) return;
+
+  data.forEach(ex=>{
+    if(isDueToday(now, ex) && timeMatches(now, ex)){
+      const bodyParts = [];
+      if(ex.notes) bodyParts.push(ex.notes);
+      if(ex.sets) bodyParts.push(ex.sets + " Sätze");
+      if(ex.reps) bodyParts.push(ex.reps + " Wiederholungen");
+      if(ex.pain!==undefined) bodyParts.push("Schmerz " + ex.pain + "/10");
+      new Notification("Zeit für: " + ex.name, { body: bodyParts.join(" · ") || "Los geht's!", tag: "fitremind-"+ex.name });
+    }
+  });
+  lastMinuteKey = minuteKey;
+}
+setInterval(scheduleTick, 20000);
+
+// ---------- Install-Prompt ----------
+window.addEventListener("beforeinstallprompt", (e)=>{ e.preventDefault(); deferredPrompt = e; });
+$("#installBtn")?.addEventListener("click", async ()=>{
+  if(deferredPrompt){ deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt=null; }
+  else { alert("Falls „Installieren“ nicht erscheint: Chrome-Menü öffnen → „Zur Startseite hinzufügen“."); }
+});
+
+// ---------- Name/Icon anpassen + Manifest-Export ----------
+$("#applyDisplay")?.addEventListener("click", ()=>{
+  const ui = loadUI();
+  const name = $("#displayName")?.value.trim();
+  const iconDataUrl = $("#iconPreview")?.dataset?.dataurl;
+  if(name) ui.displayName = name;
+  if(iconDataUrl) ui.iconDataUrl = iconDataUrl;
+  saveUI(ui); applyUI();
+  alert("Übernommen. (Launcher-Name/Icon ändern sich erst nach Manifest-Export + Neuinstallation.)");
+});
+
+$("#iconFile")?.addEventListener("change", (e)=>{
+  const file = e.target.files?.[0]; if(!file) return;
+  const img = new Image();
+  img.onload = ()=>{
+    const size = 512;
+    const canvas = document.createElement("canvas");
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#0ea5e9"; ctx.fillRect(0,0,size,size);
+    const scale = Math.max(size/img.width, size/img.height);
+    const nw = img.width*scale, nh = img.height*scale;
+    const dx = (size - nw)/2, dy = (size - nh)/2;
+    ctx.drawImage(img, dx, dy, nw, nh);
+    const dataUrl = canvas.toDataURL("image/png");
+    const prev = $("#iconPreview"); if(prev){ prev.src = dataUrl; prev.dataset.dataurl = dataUrl; }
+    const fav = $("#app-favicon"); if(fav) fav.href = dataUrl;
+  };
+  img.src = URL.createObjectURL(file);
+});
+
+function downloadBlob(name, blob){
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name; a.click(); URL.revokeObjectURL(a.href);
+}
+$("#exportManifest")?.addEventListener("click", ()=>{
+  const ui = loadUI();
+  const name = ui.displayName || "FitRemind";
+  const manifest = {
+    name: name + " – Übungen & Erinnerungen",
+    short_name: name,
+    start_url: ".",
+    display: "standalone",
+    background_color: "#0b1220",
+    theme_color: "#0ea5e9",
+    icons: [
+      {"src":"icons/icon-192.png","sizes":"192x192","type":"image/png"},
+      {"src":"icons/icon-512.png","sizes":"512x512","type":"image/png"}
+    ]
+  };
+  const blob = new Blob([JSON.stringify(manifest, null, 2)], {type:"application/manifest+json"});
+  downloadBlob("manifest.webmanifest", blob);
+});
+
+// ---------- Service Worker registrieren ----------
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.register("service-worker.js");
+}

@@ -16,16 +16,15 @@
     }
     *{box-sizing:border-box}
     html,body{height:100%}
-    body{margin:0;background:linear-gradient(180deg,var(--bg),var(--bg));color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial;font-size:calc(16px * var(--fontscale,1))}
-    header{position:sticky;top:0;background:color-mix(in oklab, var(--bg), transparent 20%);backdrop-filter:blur(6px);padding:16px;border-bottom:1px solid var(--border);z-index:10}
+    body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial;font-size:calc(16px * var(--fontscale,1))}
+    header{position:sticky;top:0;background:rgba(0,0,0,.15);backdrop-filter:blur(6px);padding:16px;border-bottom:1px solid var(--border);z-index:10}
     h1{margin:0;font-size:20px;display:flex;gap:8px;align-items:center}
     main{max-width:980px;margin:20px auto;padding:16px}
-    .card{background:linear-gradient(180deg,var(--card),var(--card));border:1px solid var(--border);border-radius:16px;padding:16px;box-shadow:0 8px 24px rgba(0,0,0,.08);}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px;box-shadow:0 8px 24px rgba(0,0,0,.08)}
     .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
     .row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
     label{font-size:.85em;color:var(--muted);display:block;margin-bottom:6px}
-    input, select, textarea, button{width:100%;padding:12px;border-radius:12px;border:1px solid var(--border);background:var(--input);color:var(--text)}
-    input[type="range"]{padding:0}
+    input,select,textarea,button{width:100%;padding:12px;border-radius:12px;border:1px solid var(--border);background:var(--input);color:var(--text)}
     textarea{min-height:72px}
     button{background:var(--acc);border:none;color:#001827;font-weight:700;cursor:pointer}
     button.secondary{background:transparent;color:var(--text);border:1px solid var(--border)}
@@ -36,9 +35,6 @@
     .chip{font-size:.75em;border:1px solid var(--border);padding:4px 8px;border-radius:999px;margin-right:6px}
     .actions{display:flex;gap:8px;flex-wrap:wrap}
     .footer{margin-top:20px;display:flex;gap:8px;flex-wrap:wrap}
-    .hint{font-size:.85em;color:var(--muted)}
-    .danger{background:#ef4444;color:white}
-    .success{background:#22c55e;color:#052415}
     .center{display:flex;justify-content:center;align-items:center;gap:8px;flex-wrap:wrap}
     .icon-preview{width:48px;height:48px;border-radius:10px;border:1px solid var(--border);object-fit:cover}
     .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
@@ -62,18 +58,100 @@
       </select>
     </div>
   </header>
+
   <main>
     <section class="card">
       <h2>Übung anlegen / bearbeiten</h2>
-      <!-- Formular siehe app.js -->
-      <div id="form-container"></div>
+      <div class="row">
+        <div>
+          <label for="name">Name der Übung</label>
+          <input id="name" placeholder="z.B. Planks, Dehnen, Schulter-Übungen">
+        </div>
+        <div>
+          <label for="time">Uhrzeit</label>
+          <input id="time" type="time" value="08:00">
+        </div>
+      </div>
+      <div class="row-3" style="margin-top:10px">
+        <div><label for="duration">Dauer (Min.)</label><input id="duration" type="number" min="1" value="10"></div>
+        <div><label for="sets">Sätze</label><input id="sets" type="number" min="1" value="3"></div>
+        <div><label for="reps">Wiederholungen</label><input id="reps" type="number" min="1" value="10"></div>
+      </div>
+      <div class="row-3" style="margin-top:10px">
+        <div><label for="timezone">Zeitzone</label><select id="timezone"></select></div>
+        <div><label for="startdate">Startdatum</label><input id="startdate" type="date"></div>
+        <div><label for="pain">Schmerzskala (0–10)</label><input id="pain" type="range" min="0" max="10" value="0" oninput="document.getElementById('painVal').textContent=this.value"><div class="muted">aktuell: <span id="painVal">0</span></div></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <div>
+          <label for="recurrence">Wiederholung</label>
+          <select id="recurrence"><option value="weekly">An bestimmten Wochentagen</option><option value="interval">Alle N Tage</option></select>
+        </div>
+        <div id="intervalBox" class="hidden"><label for="intervalDays">Intervall (Tage)</label><input id="intervalDays" type="number" min="1" value="2"></div>
+      </div>
+      <div id="weekdayBox" style="margin-top:10px">
+        <label>Wochentage</label>
+        <div class="actions">
+          <label><input type="checkbox" class="weekday" value="MO"> Mo</label>
+          <label><input type="checkbox" class="weekday" value="TU"> Di</label>
+          <label><input type="checkbox" class="weekday" value="WE"> Mi</label>
+          <label><input type="checkbox" class="weekday" value="TH"> Do</label>
+          <label><input type="checkbox" class="weekday" value="FR"> Fr</label>
+          <label><input type="checkbox" class="weekday" value="SA"> Sa</label>
+          <label><input type="checkbox" class="weekday" value="SU"> So</label>
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <div><label for="yt">YouTube-Link (optional)</label><input id="yt" placeholder="https://youtu.be/…"></div>
+        <div><label for="notes">Kurz-Notiz (optional)</label><input id="notes" placeholder="z.B. 3×30s, Atmung, Hinweise"></div>
+      </div>
+      <!-- NEU: Ausführliche Beschreibung -->
+      <div style="margin-top:10px">
+        <label for="longNotes">Ausführliche Beschreibung (optional)</label>
+        <textarea id="longNotes" placeholder="Hier kannst du die Übung sehr ausführlich beschreiben …" rows="6"></textarea>
+      </div>
+
+      <div class="footer">
+        <button id="add">➕ Übung speichern</button>
+        <button id="cancelEdit" class="secondary hidden">✖️ Bearbeitung abbrechen</button>
+        <button id="testNotify" class="secondary">🔔 Test-Benachrichtigung</button>
+      </div>
+      <p class="muted">Hinweis: Lokale Benachrichtigungen funktionieren zuverlässig nur, wenn die App aktiv ist. Exportiere zusätzlich Termine als <code>.ics</code>.</p>
     </section>
 
     <section class="card" style="margin-top:16px">
       <h2>Geplante Übungen</h2>
       <div id="list" class="list"></div>
+      <div class="footer">
+        <button id="exportAll" class="secondary">📆 Alle als .ics exportieren</button>
+        <button id="exportCSV" class="secondary">⬇️ CSV exportieren</button>
+        <button id="clear" class="danger">🗑️ Alles löschen</button>
+      </div>
+    </section>
+
+    <section class="card" style="margin-top:16px">
+      <h2>App anpassen (Name & Icon)</h2>
+      <div class="row">
+        <div><label for="displayName">Anzeigename in der App</label><input id="displayName" placeholder="z.B. Schulter-Fit, Dehn-Plan …"></div>
+        <div><label for="iconFile">App-Icon (PNG, quadratisch)</label><input id="iconFile" type="file" accept="image/png,image/jpeg"></div>
+      </div>
+      <div class="center" style="margin-top:10px">
+        <img id="iconPreview" class="icon-preview" src="icons/icon-192.png" alt="Icon-Vorschau">
+        <button id="applyDisplay" class="success">✅ In-App übernehmen</button>
+        <button id="exportManifest" class="secondary">⬇️ Manifest & Icons exportieren</button>
+      </div>
+    </section>
+
+    <section class="card" style="margin-top:16px">
+      <h2>Installation</h2>
+      <p class="muted">App installieren: In Chrome → Menü ⋮ → <b>„Zur Startseite hinzufügen“</b>. Erlaube Benachrichtigungen.</p>
+      <div class="center">
+        <button id="installBtn" class="success">⬇️ App installieren</button>
+        <button id="enableNotify" class="secondary">🔔 Benachrichtigungen erlauben</button>
+      </div>
     </section>
   </main>
+
   <script src="app.js"></script>
 </body>
 </html>

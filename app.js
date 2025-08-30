@@ -1,12 +1,13 @@
-// Fehler sichtbar machen statt still zu brechen
-window.addEventListener('error', (e)=>{
-  const msg = (e.message || 'Fehler') + (e.filename ? '\n' + e.filename + ':' + e.lineno : '');
-  document.body.insertAdjacentHTML(
-    'afterbegin',
-    '<div style="position:fixed;left:8px;bottom:8px;background:#fee;border:1px solid #900;color:#900;padding:8px;z-index:9999;max-width:90vw;white-space:pre-wrap">'+msg+'</div>'
-  );
-});// FitRemind v4 – komplette Logik mit Theme/Font, Wiederholungen, CSV/ICS,
-// YouTube, Kurz-Notiz + NEU: Ausführliche Beschreibung (ein-/ausklappbar)
+// --- Probe: läuft mein JS? ---
+document.body.insertAdjacentHTML(
+  'afterbegin',
+  '<div id="fit-debug" style="position:fixed;right:8px;bottom:8px;background:#ff0;padding:6px 8px;border:1px solid #000;z-index:9999">JS läuft</div>'
+);
+setTimeout(()=> document.getElementById('fit-debug')?.remove(), 4000);
+
+// FitRemind v4 – komplette Logik
+// Theme/Font, Wiederholungen, CSV/ICS, YouTube, Kurz-Notiz,
+// NEU: Ausführliche Beschreibung (ein-/ausklappbar)
 
 const $ = (sel)=>document.querySelector(sel);
 const listEl = $("#list");
@@ -315,97 +316,4 @@ function isDueToday(now, ex){
   if(dNow < dStart) return false;
   if(ex.recurrence === "interval"){
     const diffDays = Math.round((dNow - dStart) / 86400000);
-    const iv = Math.max(1, Number(ex.intervalDays)||1);
-    return (diffDays % iv) === 0;
-  } else {
-    return (ex.days||[]).includes(weekdayCode(localNow));
-  }
-}
-
-let lastMinuteKey = null;
-async function scheduleTick(){
-  const data = load().filter(x=>x.active);
-  if(!data.length) return;
-  if(!(await ensurePermission())) return;
-  const now = new Date();
-  const minuteKey = now.toISOString().slice(0,16);
-  if(minuteKey===lastMinuteKey) return;
-
-  data.forEach(ex=>{
-    if(isDueToday(now, ex) && timeMatches(now, ex)){
-      const bodyParts = [];
-      if(ex.notes) bodyParts.push(ex.notes);
-      if(ex.sets) bodyParts.push(ex.sets + " Sätze");
-      if(ex.reps) bodyParts.push(ex.reps + " Wiederholungen");
-      if(ex.pain!==undefined) bodyParts.push("Schmerz " + ex.pain + "/10");
-      new Notification("Zeit für: " + ex.name, { body: bodyParts.join(" · ") || "Los geht's!", tag: "fitremind-"+ex.name });
-    }
-  });
-  lastMinuteKey = minuteKey;
-}
-setInterval(scheduleTick, 20000);
-
-// ---------- Install-Prompt ----------
-window.addEventListener("beforeinstallprompt", (e)=>{ e.preventDefault(); deferredPrompt = e; });
-$("#installBtn")?.addEventListener("click", async ()=>{
-  if(deferredPrompt){ deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt=null; }
-  else { alert("Falls „Installieren“ nicht erscheint: Chrome-Menü öffnen → „Zur Startseite hinzufügen“."); }
-});
-
-// ---------- Name/Icon anpassen + Manifest-Export ----------
-$("#applyDisplay")?.addEventListener("click", ()=>{
-  const ui = loadUI();
-  const name = $("#displayName")?.value.trim();
-  const iconDataUrl = $("#iconPreview")?.dataset?.dataurl;
-  if(name) ui.displayName = name;
-  if(iconDataUrl) ui.iconDataUrl = iconDataUrl;
-  saveUI(ui); applyUI();
-  alert("Übernommen. (Launcher-Name/Icon ändern sich erst nach Manifest-Export + Neuinstallation.)");
-});
-
-$("#iconFile")?.addEventListener("change", (e)=>{
-  const file = e.target.files?.[0]; if(!file) return;
-  const img = new Image();
-  img.onload = ()=>{
-    const size = 512;
-    const canvas = document.createElement("canvas");
-    canvas.width = size; canvas.height = size;
-    const ctx = canvas.getContext("2d");
-    ctx.fillStyle = "#0ea5e9"; ctx.fillRect(0,0,size,size);
-    const scale = Math.max(size/img.width, size/img.height);
-    const nw = img.width*scale, nh = img.height*scale;
-    const dx = (size - nw)/2, dy = (size - nh)/2;
-    ctx.drawImage(img, dx, dy, nw, nh);
-    const dataUrl = canvas.toDataURL("image/png");
-    const prev = $("#iconPreview"); if(prev){ prev.src = dataUrl; prev.dataset.dataurl = dataUrl; }
-    const fav = $("#app-favicon"); if(fav) fav.href = dataUrl;
-  };
-  img.src = URL.createObjectURL(file);
-});
-
-function downloadBlob(name, blob){
-  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name; a.click(); URL.revokeObjectURL(a.href);
-}
-$("#exportManifest")?.addEventListener("click", ()=>{
-  const ui = loadUI();
-  const name = ui.displayName || "FitRemind";
-  const manifest = {
-    name: name + " – Übungen & Erinnerungen",
-    short_name: name,
-    start_url: ".",
-    display: "standalone",
-    background_color: "#0b1220",
-    theme_color: "#0ea5e9",
-    icons: [
-      {"src":"icons/icon-192.png","sizes":"192x192","type":"image/png"},
-      {"src":"icons/icon-512.png","sizes":"512x512","type":"image/png"}
-    ]
-  };
-  const blob = new Blob([JSON.stringify(manifest, null, 2)], {type:"application/manifest+json"});
-  downloadBlob("manifest.webmanifest", blob);
-});
-
-// ---------- Service Worker registrieren ----------
-if("serviceWorker" in navigator){
-  navigator.serviceWorker.register("service-worker.js");
-}
+    const iv =
